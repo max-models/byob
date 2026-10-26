@@ -5,7 +5,7 @@ requires = [ "setuptools", "wheel" ]
 [project]
 name = "byob"
 version = "0.1.0"
-description = "Template python repository."
+description = "Build your own background: static plasma fields with Debye sheaths for particle tracking."
 readme = "README.md"
 keywords = [ "python" ]
 license = { file = "LICENSE.txt" }
@@ -24,6 +24,8 @@ classifiers = [
 # max-models packages come from their devel branches through [tool.uv.sources]
 dependencies = [
   "numpy",
+  "plasmacoll",
+  "scipy",
   "scope-profiler>=0.7.5",
 ]
 optional-dependencies.dev = [
@@ -82,4 +84,5 @@ report.show_missing = true
 [tool.uv.sources]
 # one entry per max-models package in [project], spelled exactly like this in every repo:
 # cunumpy = { git = "https://github.com/max-models/cunumpy", branch = "devel" }
+plasmacoll = { git = "https://github.com/max-models/plasmacoll", branch = "devel" }
 scope-profiler = { git = "https://github.com/max-models/scope-profiler", branch = "devel" }
