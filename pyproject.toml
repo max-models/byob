@@ -27,6 +27,8 @@ dependencies = [
   "plasmacoll",
   "scipy",
   "scope-profiler>=0.7.5",
+  "simgeometry",
+  "xarray",
 ]
 optional-dependencies.dev = [
   "jupyterlab",
@@ -38,6 +40,7 @@ optional-dependencies.dev = [
 ]
 optional-dependencies.docs = [
   "griffe",
+  "plasma-plots",
   "ipykernel",
   "matplotlib>=3.10.9",
   "nbclient>=0.11",
@@ -61,6 +64,8 @@ lint.ignore = [ "E501" ]  # line length is handled by the formatter
 lint.per-file-ignores."**/tests/**" = [ "D" ]
 lint.per-file-ignores."*.ipynb" = [ "D" ]
 lint.per-file-ignores."docs/tools/*" = [ "D" ]
+# the first docstring line is the page title, the rest Markdown with LaTeX
+lint.per-file-ignores."examples/*" = [ "D301", "D415" ]
 lint.pydocstyle.convention = "google"
 
 [tool.pyright]
@@ -85,4 +90,6 @@ report.show_missing = true
 # one entry per max-models package in [project], spelled exactly like this in every repo:
 # cunumpy = { git = "https://github.com/max-models/cunumpy", branch = "devel" }
 plasmacoll = { git = "https://github.com/max-models/plasmacoll", branch = "devel" }
+plasma-plots = { git = "https://github.com/max-models/plasma-plots", branch = "devel" }
+simgeometry = { git = "https://github.com/max-models/simgeometry", branch = "devel" }
 scope-profiler = { git = "https://github.com/max-models/scope-profiler", branch = "devel" }

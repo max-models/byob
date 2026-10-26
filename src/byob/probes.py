@@ -1,17 +1,18 @@
-"""Probe measurements and their harmonic interpolation onto a grid.
+"""Probe measurements and their interpolation onto a grid.
 
 A :class:`Probe` fixes one quantity (``"density"``, ``"electron_temperature"``,
-``"ion_temperature"``, ...) at one position. :func:`harmonic_fill` spreads the
-probes of a quantity over the nodes of a uniform grid by solving Laplace's
-equation with the probe nodes held fixed. Walls and the domain boundary are
-zero-gradient, so values do not leak through electrodes, and the result never
-overshoots the probe values. Positive quantities are interpolated in log space.
+``"ion_temperature"``, ...) at one position. :func:`fill_probes` spreads the
+probes of a quantity over the nodes of a uniform grid by solving a
+(bi)harmonic equation on the grid graph with the probe nodes held fixed. Walls
+and the domain boundary are zero-gradient, so values flow around electrodes
+instead of through them. Positive quantities are interpolated in log space.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 import scipy.sparse as sparse
@@ -21,7 +22,7 @@ import scope_profiler as sp
 
 from byob._profiling import PROFILE_TAGS
 
-__all__ = ["Probe", "UniformGrid", "harmonic_fill"]
+__all__ = ["Probe", "UniformGrid", "fill_probes"]
 
 
 @dataclass(frozen=True)
@@ -114,15 +115,21 @@ def _graph_laplacian(active: np.ndarray, spacing: np.ndarray) -> sparse.csr_matr
     return (sparse.diags(degree) - adjacency).tocsr()
 
 
-@sp.profile("byob.harmonic_fill", tags=PROFILE_TAGS)
-def harmonic_fill(
+@sp.profile("byob.fill_probes", tags=PROFILE_TAGS)
+def fill_probes(
     grid: UniformGrid,
     probes: Sequence[Probe],
     *,
     solid: np.ndarray | None = None,
     log: bool = True,
+    method: Literal["biharmonic", "harmonic"] = "biharmonic",
 ) -> np.ndarray:
-    """Interpolate ``probes`` over the nodes of ``grid`` by a Laplace solve.
+    """Interpolate ``probes`` over the nodes of ``grid``.
+
+    ``"biharmonic"`` minimises the squared Laplacian, a discrete thin-plate
+    spline: smooth through the probes, but it may overshoot them a little
+    between probes. ``"harmonic"`` solves Laplace's equation: it never
+    overshoots, but in 2D and 3D it has a logarithmic cusp at every probe.
 
     ``solid`` (boolean, grid-shaped) marks nodes inside walls; they are left out
     of the solve and set to NaN. With ``log`` the logarithm of the values is
@@ -159,8 +166,9 @@ def harmonic_fill(
     result = np.full(active.size, np.nan)
     result[fixed] = target[fixed]
     if free.any():
-        a = laplacian[free][:, free]
-        b = -laplacian[free][:, fixed] @ target[fixed]
+        operator = laplacian if method == "harmonic" else laplacian.T @ laplacian
+        a = operator[free][:, free]
+        b = -operator[free][:, fixed] @ target[fixed]
         result[free] = scipy.sparse.linalg.spsolve(a.tocsc(), b)
     result = result.reshape(shape)
     return np.exp(result) if log else result

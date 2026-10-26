@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from plasmacoll.constants import ELECTRON_MASS, PROTON_MASS
 
-from byob import Background, Probe, UniformGrid, Wall, harmonic_fill, sheath_drop
+from byob import Background, Probe, UniformGrid, Wall, fill_probes, sheath_drop
 from byob.sheath import PlasmaState
 
 
@@ -32,17 +32,33 @@ def uniform_probes(n=1e17, te=2.0, ti=0.5):
 
 def test_harmonic_fill_hits_probes_without_overshoot():
     probes = [Probe("density", (0.0, 0.0), 1e16), Probe("density", (0.1, 0.05), 1e18)]
-    values = harmonic_fill(GRID, probes)
+    values = fill_probes(GRID, probes, method="harmonic")
     assert values[0, 0] == pytest.approx(1e16)
     assert values[-1, -1] == pytest.approx(1e18)
     assert values.min() >= 1e16 * (1 - 1e-12)
     assert values.max() <= 1e18 * (1 + 1e-12)
 
 
-def test_harmonic_fill_unreached_region_is_nan():
+def test_biharmonic_passes_through_probes_smoothly():
+    probes = [
+        Probe("density", (0.02, 0.02), 1e16),
+        Probe("density", (0.08, 0.03), 1e18),
+        Probe("density", (0.05, 0.04), 1e17),
+    ]
+    values = fill_probes(GRID, probes)
+    for p in probes:
+        assert values[GRID.nearest_node(p.position)] == pytest.approx(p.value)
+    # no cusp: the neighbours of a probe node straddle it, unlike the harmonic fill
+    i, j = GRID.nearest_node(probes[2].position)
+    log = np.log(values)
+    assert min(log[i - 1, j], log[i + 1, j]) < log[i, j]
+    assert log[i, j] < max(log[i - 1, j], log[i + 1, j])
+
+
+def test_fill_probes_unreached_region_is_nan():
     solid = np.zeros(GRID.num_gridpoints, dtype=bool)
     solid[20, :] = True  # a wall splitting the domain
-    values = harmonic_fill(GRID, [Probe("density", (0.01, 0.01), 1e17)], solid=solid)
+    values = fill_probes(GRID, [Probe("density", (0.01, 0.01), 1e17)], solid=solid)
     assert np.all(np.isnan(values[21:]))
     assert np.allclose(values[:20], 1e17)
 

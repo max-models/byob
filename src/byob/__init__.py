@@ -6,7 +6,7 @@ import scope_profiler as sp
 
 from byob._profiling import PROFILE_TAGS
 from byob.background import Background, FieldProfile
-from byob.probes import Probe, UniformGrid, harmonic_fill
+from byob.probes import Probe, UniformGrid, fill_probes
 from byob.sheath import Wall, debye_length, sheath_drop, sheath_width
 
 __all__ = [
@@ -16,7 +16,7 @@ __all__ = [
     "UniformGrid",
     "Wall",
     "debye_length",
-    "harmonic_fill",
+    "fill_probes",
     "sheath_drop",
     "sheath_width",
 ]

@@ -6,7 +6,7 @@ import { defineDocs } from '@max-models/starlight-theme';
 export default defineDocs({
 	repo: 'byob',
 	title: 'byob',
-	description: 'Template repository for Python projects.',
+	description: 'Build your own background: static plasma fields with Debye sheaths for particle tracking.',
 	pythonPackage: 'byob',
 	nav: [
 		{ label: 'Getting started', link: '/getting-started/installation/' },

@@ -1,9 +1,9 @@
 ---
 title: byob
-description: Template repository for Python projects.
+description: Build your own background - static plasma fields with Debye sheaths for particle tracking.
 template: splash
 hero:
-  tagline: A starting point for a Python package with tests, CI, tutorials and an Astro documentation site.
+  tagline: Build your own background. Static plasma fields from probe values and walls, with Debye sheaths, for particle tracking.
   actions:
     - text: Get started
       link: /byob/getting-started/installation/
@@ -16,23 +16,20 @@ hero:
 
 import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-## What is included
+## What it does
 
 <CardGrid>
-	<Card title="Package layout" icon="open-book">
-		A `src/` layout with a console entry point, `pytest` tests and a `pyproject.toml` ready for PyPI.
+	<Card title="Probes" icon="pencil">
+		Density, temperatures and potential at a few points, interpolated smoothly over a grid and around walls.
 	</Card>
-	<Card title="Continuous integration" icon="rocket">
-		GitHub Actions for tests, static analysis, tutorial execution, documentation and PyPI publishing.
+	<Card title="Sheaths" icon="warning">
+		Floating and biased walls get a Debye sheath and presheath from the local electron temperature, evaluated analytically so they stay sharp on coarse grids.
 	</Card>
-	<Card title="Tutorials" icon="document">
-		Jupyter notebooks in `tutorials/` are executed and published as pages of this site.
+	<Card title="Particle tracking" icon="rocket">
+		Densities, temperatures, potential and electric field at particle positions, and plasmacoll profiles.
 	</Card>
-	<Card title="Full examples" icon="document">
-		Complete Python scripts in `examples/` are shown with their plots.
-	</Card>
-	<Card title="API reference" icon="setting">
-		Every module, class and function is documented from the docstrings with starlight-pydocs.
+	<Card title="Plotting" icon="seti:image">
+		`Background.sample` returns xarray data for plasma-plots: maps, lineouts and field arrows.
 	</Card>
 </CardGrid>
 
@@ -40,7 +37,7 @@ import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 <CardGrid>
 	<LinkCard title="Installation" href="/byob/getting-started/installation/" description="Create an environment and install the package." />
-	<LinkCard title="Quickstart" href="/byob/getting-started/quickstart/" description="Run the command line entry point." />
+	<LinkCard title="Quickstart" href="/byob/getting-started/quickstart/" description="Probes, walls, a background, and plots of it." />
 	<LinkCard title="Tutorials" href="/byob/tutorials/" description="Executed notebooks with their outputs." />
 	<LinkCard title="Full examples" href="/byob/full-examples/" description="Complete scripts and their plots." />
 	<LinkCard title="API reference" href="/byob/api/byob/" description="Generated from the docstrings." />

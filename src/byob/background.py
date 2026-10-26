@@ -1,7 +1,7 @@
 """A static plasma background for particle tracking, built from probes and walls.
 
 :meth:`Background.build` interpolates the probed density and temperatures over a
-grid (:func:`~byob.probes.harmonic_fill`) and sets the bulk potential from the
+grid (:func:`~byob.probes.fill_probes`) and sets the bulk potential from the
 Boltzmann relation ``phi = phi_ref + Te ln(n / n_ref)``. Sheaths and presheaths
 (:mod:`byob.sheath`) are added analytically at particle positions, so they stay
 sharp however coarse the grid.
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Literal
 
 import numpy as np
 import scope_profiler as sp
@@ -22,11 +23,20 @@ from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import distance_transform_edt
 
 from byob._profiling import PROFILE_TAGS
-from byob.probes import Probe, UniformGrid, harmonic_fill
+from byob.probes import Probe, UniformGrid, fill_probes
 from byob.sheath import PlasmaState, Wall, debye_length, wall_layer
 
 __all__ = ["Background", "FieldProfile"]
 
+_UNITS = {
+    "density": "m^-3",
+    "electron_density": "m^-3",
+    "ion_density": "m^-3",
+    "electron_temperature": "eV",
+    "ion_temperature": "eV",
+    "potential": "V",
+    "electric_field": "V/m",
+}
 _BULK = ("density", "electron_temperature", "ion_temperature", "potential")
 
 
@@ -71,6 +81,7 @@ class Background:
     walls: Sequence[Wall] = ()
     ion_mass: float = PROTON_MASS
     presheath_debye_lengths: float = 20.0
+    probes: Sequence[Probe] = ()
     _interpolators: dict = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -83,6 +94,7 @@ class Background:
         *,
         ion_mass: float = PROTON_MASS,
         presheath_debye_lengths: float = 20.0,
+        method: Literal["biharmonic", "harmonic"] = "biharmonic",
     ) -> Background:
         """Interpolate the ``probes`` over ``grid`` and set the bulk potential.
 
@@ -90,7 +102,8 @@ class Background:
         are required (one each is a uniform plasma). A ``potential`` probe fixes
         the plasma potential at its node; without one, it is zero where the
         density is largest. The presheath decays over ``presheath_debye_lengths``
-        Debye lengths of the bulk.
+        Debye lengths of the bulk. ``method`` picks the interpolation, see
+        :func:`~byob.probes.fill_probes`.
         """
         points = grid.points().T
         solid = np.zeros(points.shape[0], dtype=bool)
@@ -103,7 +116,7 @@ class Background:
             selected = [p for p in probes if p.quantity == quantity]
             if not selected:
                 raise ValueError(f"no {quantity!r} probe")
-            bulk[quantity] = harmonic_fill(grid, selected, solid=solid)
+            bulk[quantity] = fill_probes(grid, selected, solid=solid, method=method)
 
         n, te = bulk["density"], bulk["electron_temperature"]
         anchors = [p for p in probes if p.quantity == "potential"]
@@ -114,7 +127,9 @@ class Background:
             node = np.unravel_index(np.nanargmax(n), n.shape)
             phi_ref = 0.0
         bulk["potential"] = phi_ref + te * np.log(n / n[node])
-        return cls(grid, bulk, tuple(walls), ion_mass, presheath_debye_lengths)
+        return cls(
+            grid, bulk, tuple(walls), ion_mass, presheath_debye_lengths, tuple(probes)
+        )
 
     def _grid_values(self, quantity: str) -> np.ndarray:
         # sheaths only lower the densities, so the bulk density bounds them
@@ -151,22 +166,27 @@ class Background:
         return nearest, distances[nearest, np.arange(positions.shape[0])]
 
     def _layers(self, positions: np.ndarray):
-        """Yield ``(selection, wall, layer)`` for the wall nearest each position."""
+        """Yield ``(selection, wall, layer)``, the controlling wall at each position.
+
+        Every wall's layer is evaluated everywhere and each position takes the
+        one with the lowest potential. That is the nearest wall away from
+        corners, and, unlike the nearest wall, it keeps the potential
+        continuous where two presheaths overlap.
+        """
         state = {q: self._interpolate(q, positions) for q in _BULK}
-        nearest, distance = self._nearest_wall(positions)
+        bulk = PlasmaState(**state)
         presheath = self.presheath_debye_lengths * debye_length(
             state["density"], state["electron_temperature"]
         )
-        for index, wall in enumerate(self.walls):
-            sel = nearest == index
-            if not sel.any():
-                continue
-            bulk = PlasmaState(**{q: state[q][sel] for q in _BULK})
-            yield (
-                sel,
-                wall,
-                wall_layer(distance[sel], wall, bulk, self.ion_mass, presheath[sel]),
-            )
+        layers = [
+            wall_layer(w.distance(positions), w, bulk, self.ion_mass, presheath)
+            for w in self.walls
+        ]
+        controlling = np.argmin([layer["potential"] for layer in layers], axis=0)
+        for index, (wall, layer) in enumerate(zip(self.walls, layers, strict=True)):
+            sel = controlling == index
+            if sel.any():
+                yield sel, wall, {q: v[sel] for q, v in layer.items()}
 
     @sp.profile("byob.Background.evaluate", tags=PROFILE_TAGS)
     def evaluate(self, positions: np.ndarray) -> dict[str, np.ndarray]:
@@ -209,6 +229,53 @@ class Background:
                 ) / (2 * step)
             field_[sel] -= layer["dpotential"][:, None] * normal
         return field_
+
+    @sp.profile("byob.Background.sample", tags=PROFILE_TAGS)
+    def sample(self, x=None, y=None, z=None, *, resolution=128):
+        """Return every quantity on a tensor grid as an :class:`xarray.Dataset`.
+
+        Like :meth:`simgeometry.api.GeometryAPI.evaluate`: a scalar fixes an
+        axis, a sequence samples it, and an axis left out gets ``resolution``
+        points across the grid bounds. Fixed axes are dropped from the
+        dimensions, so ``sample(y=0.0)`` is a line and ``sample()`` the whole
+        domain. The values come from :meth:`evaluate` and
+        :meth:`electric_field`, with the field's
+        ``component`` dimension as plasma-plots' ``vector`` expects.
+        """
+        import xarray as xr
+
+        names = "xyz"[: self.grid.ndim]
+        given = dict(zip("xyz", (x, y, z), strict=True))
+        coords = {}
+        for name, lo, hi in zip(
+            names, self.grid.lower_bound, self.grid.upper_bound, strict=True
+        ):
+            value = given[name]
+            coords[name] = (
+                np.linspace(lo, hi, resolution)
+                if value is None
+                else np.asarray(value, dtype=float)
+            )
+        mesh = np.meshgrid(*(np.atleast_1d(c) for c in coords.values()), indexing="ij")
+        positions = np.stack([m.ravel() for m in mesh], axis=-1)
+        dims = [n for n in names if coords[n].ndim == 1]
+        shape = [coords[n].size for n in dims]
+
+        values = self.evaluate(positions)
+        field_ = self.electric_field(positions)
+        if self.walls:
+            _, distance = self._nearest_wall(positions)
+            for v in values.values():
+                v[distance < 0] = np.nan  # inside a wall
+            field_[distance < 0] = np.nan
+        data = {q: (dims, v.reshape(shape)) for q, v in values.items()}
+        data["electric_field"] = (["component", *dims], field_.T.reshape(-1, *shape))
+        dataset = xr.Dataset(
+            data, coords={n: coords[n] for n in names} | {"component": list(names)}
+        )
+        for name, unit in _UNITS.items():
+            dataset[name].attrs["units"] = unit
+        return dataset
 
     def profile(self, quantity: str, reference: float | None = None) -> FieldProfile:
         """Return ``quantity`` over ``reference`` (the grid maximum by default).
