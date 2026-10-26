@@ -45,8 +45,8 @@ def _fill_solid(values: np.ndarray) -> np.ndarray:
     missing = np.isnan(values)
     if not missing.any():
         return values
-    _, index = distance_transform_edt(missing, return_indices=True)
-    return values[tuple(index)]
+    index = distance_transform_edt(missing, return_distances=False, return_indices=True)
+    return values[tuple(np.asarray(index))]
 
 
 @dataclass(frozen=True)
@@ -141,7 +141,10 @@ class Background:
         if quantity not in self._interpolators:
             values = _fill_solid(self.bulk[quantity])
             self._interpolators[quantity] = RegularGridInterpolator(
-                self.grid.axes, values, bounds_error=False, fill_value=None
+                self.grid.axes,
+                values,
+                bounds_error=False,
+                fill_value=None,  # pyright: ignore[reportArgumentType]
             )
         return self._interpolators[quantity](positions)
 
@@ -153,7 +156,10 @@ class Background:
             gradient = [gradient] if self.grid.ndim == 1 else gradient
             self._interpolators[key] = [
                 RegularGridInterpolator(
-                    self.grid.axes, g, bounds_error=False, fill_value=None
+                    self.grid.axes,
+                    g,
+                    bounds_error=False,
+                    fill_value=None,  # pyright: ignore[reportArgumentType]
                 )
                 for g in gradient
             ]

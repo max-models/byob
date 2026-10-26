@@ -11,26 +11,31 @@ analysis](https://github.com/max-models/byob/actions/workflows/static_analysis.y
 [![PyPI](https://img.shields.io/pypi/v/byob.png)](https://pypi.org/project/byob/)
 [![Python](https://img.shields.io/pypi/pyversions/byob.png)](https://pypi.org/project/byob/)
 
-Template repository for Python projects: a `src/` package with a console
-entry point, `pytest` tests, GitHub Actions for tests, static analysis,
-tutorials, documentation and PyPI publishing, and an
-[Astro](https://astro.build/) +
-[Starlight](https://starlight.astro.build/) documentation site.
+Build your own background: static plasma fields for particle tracking.
+Give the density and temperatures at a few probe positions and the walls
+(any [simgeometry](https://github.com/max-models/simgeometry) shape,
+floating or biased); byob interpolates the probes over a grid, sets the
+bulk potential from Boltzmann’s relation and adds the Debye sheath and
+presheath at every wall from the local electron temperature.
 
 Documentation: <https://max-models.github.io/byob/>
 
-## Use the template
+``` python
+from simgeometry import Rectangle
 
-Create a repository from this template, then rename the package:
+from byob import Background, Probe, UniformGrid, Wall
 
-``` bash
-bash setup_project.sh my-app
-rm setup_project.sh
+grid = UniformGrid((0.0, 0.0), (0.05, 0.02), (51, 21))
+probes = [
+    Probe("density", (0.025, 0.01), 1e17),  # m^-3
+    Probe("electron_temperature", (0.025, 0.01), 2.0),  # eV
+    Probe("ion_temperature", (0.025, 0.01), 0.5),
+]
+background = Background.build(grid, probes, [Wall(Rectangle((-0.01, 0.01), (0.02, 0.04)))])
+
+field = background.electric_field([[1e-5, 0.01]])  # at particle positions, V/m
+maps = background.sample(resolution=200)  # xarray, for plasma-plots
 ```
-
-This replaces `byob` with `my-app` everywhere, moves
-`src/app` to `src/my_app`, and points the entry point, tests and docs at
-it.
 
 ## Install
 

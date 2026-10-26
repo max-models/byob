@@ -89,7 +89,7 @@ class UniformGrid:
         return tuple(np.clip(index, 0, np.array(self.num_gridpoints) - 1).tolist())
 
 
-def _graph_laplacian(active: np.ndarray, spacing: np.ndarray) -> sparse.csr_matrix:
+def _graph_laplacian(active: np.ndarray, spacing: np.ndarray) -> sparse.csr_array:
     """Return the Laplacian of the grid graph that links neighbouring active nodes.
 
     A link along an axis weighs ``1/spacing**2``. Links to inactive nodes and
@@ -107,12 +107,12 @@ def _graph_laplacian(active: np.ndarray, spacing: np.ndarray) -> sparse.csr_matr
         cols.append(index[tuple(hi)][both])
         weights.append(np.full(int(both.sum()), spacing[axis] ** -2))
     i, j, w = np.concatenate(rows), np.concatenate(cols), np.concatenate(weights)
-    adjacency = sparse.coo_matrix(
+    adjacency = sparse.coo_array(
         (np.concatenate([w, w]), (np.concatenate([i, j]), np.concatenate([j, i]))),
         shape=(active.size, active.size),
     ).tocsr()
     degree = np.asarray(adjacency.sum(axis=1)).ravel()
-    return (sparse.diags(degree) - adjacency).tocsr()
+    return sparse.csr_array(sparse.diags_array(degree) - adjacency)
 
 
 @sp.profile("byob.fill_probes", tags=PROFILE_TAGS)

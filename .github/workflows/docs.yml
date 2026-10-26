@@ -30,8 +30,8 @@ jobs:
         tutorials/index.html
         tutorials/example-tutorial/index.html
         full-examples/index.html
-        full-examples/sine-wave/index.html
+        full-examples/01-floating-wall/index.html
         api/byob/index.html
         api/byob/main/index.html
         tutorials/example-tutorial/example_tutorial.ipynb
-        full-examples/sine-wave/plot-1.png
+        full-examples/01-floating-wall/plot-1.png
