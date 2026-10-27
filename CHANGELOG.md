@@ -23,6 +23,11 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `Background` gathers its bulk quantities and the bulk electric field with mpifield's
+  compiled kernels (`mpifield.Field`, new dependency) instead of scipy's
+  `RegularGridInterpolator`; the values inside the grid agree to round-off. Outside the grid
+  a quantity takes its edge value instead of being extrapolated linearly.
+
 - `__version__` is read from the installed package metadata (`importlib.metadata`), not hardcoded,
   so it can no longer disagree with `pyproject.toml` (a hardcoded one went stale in releases).
 
