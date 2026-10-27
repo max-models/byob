@@ -2,7 +2,9 @@
 
 :meth:`Background.build` interpolates the probed density and temperatures over a
 grid (:func:`~byob.probes.fill_probes`) and sets the bulk potential from the
-Boltzmann relation ``phi = phi_ref + Te ln(n / n_ref)``. Sheaths and presheaths
+Boltzmann relation ``phi = phi_ref + Te ln(n / n_ref)``. The bulk is gathered at
+particle positions linearly by :class:`mpifield.Field`'s compiled kernels; outside
+the grid it takes the value of the nearest edge. Sheaths and presheaths
 (:mod:`byob.sheath`) are added analytically at particle positions, so they stay
 sharp however coarse the grid.
 
@@ -18,8 +20,8 @@ from typing import Literal
 
 import numpy as np
 import scope_profiler as sp
+from mpifield import Field
 from plasmacoll.constants import PROTON_MASS
-from scipy.interpolate import RegularGridInterpolator
 from scipy.ndimage import distance_transform_edt
 
 from byob._profiling import PROFILE_TAGS
@@ -82,7 +84,7 @@ class Background:
     ion_mass: float = PROTON_MASS
     presheath_debye_lengths: float = 20.0
     probes: Sequence[Probe] = ()
-    _interpolators: dict = field(default_factory=dict, repr=False)
+    _fields: dict[str, Field] = field(default_factory=dict, repr=False)
 
     @classmethod
     @sp.profile("byob.Background.build", tags=PROFILE_TAGS)
@@ -137,33 +139,22 @@ class Background:
             quantity = "density"
         return self.bulk[quantity]
 
-    def _interpolate(self, quantity: str, positions: np.ndarray) -> np.ndarray:
-        if quantity not in self._interpolators:
-            values = _fill_solid(self.bulk[quantity])
-            self._interpolators[quantity] = RegularGridInterpolator(
-                self.grid.axes,
-                values,
-                bounds_error=False,
-                fill_value=None,  # pyright: ignore[reportArgumentType]
-            )
-        return self._interpolators[quantity](positions)
+    def _field(self, data: np.ndarray) -> Field:
+        return Field.from_array(data, self.grid.lower_bound, self.grid.upper_bound)
+
+    def _bulk_state(self, positions: np.ndarray) -> dict[str, np.ndarray]:
+        """Return the bulk quantities at ``positions``, gathered in one pass."""
+        if "bulk" not in self._fields:
+            stacked = np.stack([_fill_solid(self.bulk[q]) for q in _BULK], axis=-1)
+            self._fields["bulk"] = self._field(stacked)
+        values = np.asarray(self._fields["bulk"].gather(positions.T))
+        return dict(zip(_BULK, values, strict=True))
 
     def _bulk_field(self, positions: np.ndarray) -> np.ndarray:
-        key = "_grad"
-        if key not in self._interpolators:
-            values = _fill_solid(self.bulk["potential"])
-            gradient = np.gradient(values, *self.grid.axes)
-            gradient = [gradient] if self.grid.ndim == 1 else gradient
-            self._interpolators[key] = [
-                RegularGridInterpolator(
-                    self.grid.axes,
-                    g,
-                    bounds_error=False,
-                    fill_value=None,  # pyright: ignore[reportArgumentType]
-                )
-                for g in gradient
-            ]
-        return -np.stack([f(positions) for f in self._interpolators[key]], axis=-1)
+        if "gradient" not in self._fields:
+            potential = self._field(_fill_solid(self.bulk["potential"]))
+            self._fields["gradient"] = potential.gradient()
+        return -np.asarray(self._fields["gradient"].gather(positions.T)).T
 
     def _nearest_wall(self, positions: np.ndarray):
         """Return each position's nearest wall index and distance to it."""
@@ -179,7 +170,7 @@ class Background:
         corners, and, unlike the nearest wall, it keeps the potential
         continuous where two presheaths overlap.
         """
-        state = {q: self._interpolate(q, positions) for q in _BULK}
+        state = self._bulk_state(positions)
         bulk = PlasmaState(**state)
         presheath = self.presheath_debye_lengths * debye_length(
             state["density"], state["electron_temperature"]
@@ -203,7 +194,7 @@ class Background:
         before the sheaths).
         """
         positions = np.atleast_2d(np.asarray(positions, dtype=float))
-        out = {q: self._interpolate(q, positions) for q in _BULK}
+        out = self._bulk_state(positions)
         out["electron_density"] = out["density"].copy()
         out["ion_density"] = out["density"].copy()
         for sel, _, layer in self._layers(positions) if self.walls else ():

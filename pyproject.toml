@@ -23,6 +23,7 @@ classifiers = [
 # PyPI rejects direct references (name @ git+...), so only version ranges go here; the
 # max-models packages come from their devel branches through [tool.uv.sources]
 dependencies = [
+  "mpifield>=0.1.0",
   "numpy",
   "plasmacoll",
   "scipy",
@@ -89,6 +90,7 @@ report.show_missing = true
 [tool.uv.sources]
 # one entry per max-models package in [project], spelled exactly like this in every repo:
 # cunumpy = { git = "https://github.com/max-models/cunumpy", branch = "devel" }
+mpifield = { git = "https://github.com/max-models/mpifield", branch = "devel" }
 plasmacoll = { git = "https://github.com/max-models/plasmacoll", branch = "devel" }
 plasma-plots = { git = "https://github.com/max-models/plasma-plots", branch = "devel" }
 simgeometry = { git = "https://github.com/max-models/simgeometry", branch = "devel" }
