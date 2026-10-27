@@ -34,7 +34,9 @@ probes = [
     Probe("electron_temperature", (0.025, 0.01), 2.0),  # eV
     Probe("ion_temperature", (0.025, 0.01), 0.5),
 ]
-background = Background.build(grid, probes, [Wall(Rectangle((-0.01, 0.01), (0.02, 0.04)))])
+background = Background.build(
+    grid, probes, [Wall(Rectangle((-0.01, 0.01), (0.02, 0.04)))]
+)
 
 field = background.electric_field([[1e-5, 0.01]])  # at particle positions, V/m
 maps = background.sample(resolution=200)  # xarray, for plasma-plots
