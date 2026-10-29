@@ -49,7 +49,6 @@ optional-dependencies.docs = [
 ]
 optional-dependencies.test = [ "pytest", "pytest-cov" ]
 urls.Source = "https://github.com/max-models/byob"
-scripts.byob = "byob.main:main"
 
 [project.entry-points."scope_profiler.opt_in_tags"]
 byob = "byob"
