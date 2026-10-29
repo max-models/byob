@@ -62,7 +62,7 @@ line = background.sample(x=np.linspace(0, 1e-3, 400), y=0.01)
 line.potential.plasma.plot.lineout(x="x")
 ```
 
-The [full examples](/byob/full-examples/) go through many cases: temperature and mass scans,
+The [example scripts](/byob/example-scripts/) go through many cases: temperature and mass scans,
 biased electrodes, probe interpolation, apertures, 3D and ion tracking.
 
 See the [API reference](/byob/api/byob/) for every module and function.
