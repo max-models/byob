@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import scope_profiler as sp
 
-from byob.main import main
+from byob.probes import Probe, UniformGrid, fill_probes
 
 
 @pytest.fixture(autouse=True)
@@ -21,7 +21,10 @@ def _region_names(**setup_kwargs) -> set[str]:
     sp.setup(output=None, **setup_kwargs)
     # an application region, recorded either way
     with sp.region("user.run"):
-        main()
+        fill_probes(
+            UniformGrid((0.0, 0.0), (0.1, 0.05), (9, 5)),
+            [Probe("density", (0.05, 0.025), 1e17)],
+        )
     results = sp.finalize(verbose=False, return_results=True)
     return set(results.region_names)
 
@@ -32,7 +35,7 @@ def test_regions_are_off_by_default() -> None:
 
 @pytest.mark.parametrize("tags", [["byob"], ["*"]])
 def test_enabling_the_tag_records_the_regions(tags: list[str]) -> None:
-    assert _region_names(enable_tags=tags) == {"byob.main", "user.run"}
+    assert _region_names(enable_tags=tags) == {"byob.fill_probes", "user.run"}
 
 
 def test_the_opt_in_tag_has_an_entry_point():
