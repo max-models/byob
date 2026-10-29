@@ -27,8 +27,8 @@ jobs:
       pre-build: uv run python docs/tools/examples.py
       smoke-paths: |
         getting-started/installation/index.html
-        tutorials/index.html
-        full-examples/index.html
-        full-examples/01-floating-wall/index.html
+        examples/index.html
+        example-scripts/index.html
+        example-scripts/01-floating-wall/index.html
         api/byob/index.html
-        full-examples/01-floating-wall/plot-1.png
+        example-scripts/01-floating-wall/plot-1.png
