@@ -112,3 +112,41 @@ def test_profile_is_plasmacoll_profile():
     assert isinstance(profile, Profile)
     assert profile.max_factor == pytest.approx(1.0)
     assert np.all(profile(np.array([[0.05, 0.02], [0.0101, 0.02]])) <= 1.0)
+
+
+def test_fill_probes_rejects_bad_probes():
+    with pytest.raises(ValueError, match="at least one probe"):
+        fill_probes(GRID, [])
+    with pytest.raises(ValueError, match="positive"):
+        fill_probes(GRID, [Probe("density", (0.05, 0.025), 0.0)])
+    solid = np.zeros(GRID.num_gridpoints, dtype=bool)
+    solid[:5] = True
+    with pytest.raises(ValueError, match="inside a wall"):
+        fill_probes(GRID, [Probe("density", (0.0, 0.0), 1e17)], solid=solid)
+    with pytest.raises(ValueError, match="no 'ion_temperature' probe"):
+        Background.build(GRID, uniform_probes()[:2])
+
+
+def test_uniform_grid_from_simgeometry():
+    class Grid:
+        lower_bound, upper_bound, num_gridpoints = (0, 0), (0.1, 0.05), (41, 21)
+
+    grid = UniformGrid.from_simgeometry(Grid())
+    assert grid == GRID
+    assert grid.ndim == 2
+
+
+def test_sample_masks_the_wall_and_sets_units():
+    background = Background.build(
+        GRID, uniform_probes(), [Wall(HalfSpace(0.02), "floating")]
+    )
+    line = background.sample(y=0.025, resolution=16)
+    assert line["potential"].dims == ("x",)
+    assert line["electric_field"].dims == ("component", "x")
+    assert line["potential"].attrs["units"] == "V"
+    inside = line["x"].values < 0.02
+    assert np.all(np.isnan(line["potential"].values[inside]))
+    assert np.all(np.isfinite(line["potential"].values[~inside]))
+    plane = Background.build(GRID, uniform_probes()).sample(resolution=8)
+    assert plane["density"].shape == (8, 8)
+    assert plane["electric_field"].sizes["component"] == 2

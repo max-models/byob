@@ -1,11 +1,11 @@
 """A static plasma background for particle tracking, built from probes and walls.
 
-:meth:`Background.build` interpolates the probed density and temperatures over a
-grid (:func:`~byob.probes.fill_probes`) and sets the bulk potential from the
+`Background.build` interpolates the probed density and temperatures over a
+grid (`byob.probes.fill_probes`) and sets the bulk potential from the
 Boltzmann relation ``phi = phi_ref + Te ln(n / n_ref)``. The bulk is gathered at
-particle positions linearly by :class:`mpifield.Field`'s compiled kernels; outside
+particle positions linearly by `mpifield.Field`'s compiled kernels; outside
 the grid it takes the value of the nearest edge. Sheaths and presheaths
-(:mod:`byob.sheath`) are added analytically at particle positions, so they stay
+(`byob.sheath`) are added analytically at particle positions, so they stay
 sharp however coarse the grid.
 
 Positions are ``(N, ndim)`` in m, densities in m^-3, temperatures in eV,
@@ -20,6 +20,7 @@ from typing import Literal
 
 import numpy as np
 import scope_profiler as sp
+from methodcard import ConvergenceProblem, Rule, method
 from mpifield import Field
 from plasmacoll.constants import PROTON_MASS
 from scipy.ndimage import distance_transform_edt
@@ -51,9 +52,88 @@ def _fill_solid(values: np.ndarray) -> np.ndarray:
     return values[tuple(np.asarray(index))]
 
 
+def _smooth_background(spacing: float) -> Background:
+    """A wall-free background on the unit square with ``phi = sin(2x) cos(y)``."""
+    count = round(1.0 / spacing) + 1
+    grid = UniformGrid((0.0, 0.0), (1.0, 1.0), (count, count))
+    x, y = np.meshgrid(*grid.axes, indexing="ij")
+    potential = np.sin(2 * x) * np.cos(y)
+    ones = np.ones_like(x)
+    bulk = {
+        "density": 1.0e17 * np.exp(potential),
+        "electron_temperature": ones,
+        "ion_temperature": ones,
+        "potential": potential,
+    }
+    return Background(grid, bulk)
+
+
+def _evaluate_problem() -> ConvergenceProblem:
+    """The gathered potential of `_smooth_background` against the exact one."""
+    points = np.random.default_rng(0).uniform(0.25, 0.75, size=(64, 2))
+    exact = np.sin(2 * points[:, 0]) * np.cos(points[:, 1])
+
+    def error(spacing: float) -> float:
+        potential = _smooth_background(spacing).evaluate(points)["potential"]
+        return float(np.max(np.abs(potential - exact)))
+
+    return ConvergenceProblem(error, steps=[1 / 16, 1 / 32, 1 / 64, 1 / 128])
+
+
+def _electric_field_problem() -> ConvergenceProblem:
+    """The bulk field of `_smooth_background` against ``-grad(phi)``."""
+    points = np.random.default_rng(0).uniform(0.25, 0.75, size=(64, 2))
+    x, y = points.T
+    exact = np.stack([-2 * np.cos(2 * x) * np.cos(y), np.sin(2 * x) * np.sin(y)], 1)
+
+    def error(spacing: float) -> float:
+        field_ = _smooth_background(spacing).electric_field(points)
+        return float(np.max(np.abs(field_ - exact)))
+
+    return ConvergenceProblem(error, steps=[1 / 16, 1 / 32, 1 / 64, 1 / 128])
+
+
+def _build_rules() -> dict:
+    """The SymPy rule of `Background.build`: a two-node grid with a potential probe."""
+    import sympy
+
+    n, n_ref, te, phi_ref = sympy.symbols(
+        "density reference_density te reference_potential", positive=True
+    )
+
+    def boltzmann(density, reference_density, te, reference_potential):
+        grid = UniformGrid((0.0,), (1.0,), (2,))
+        probes = [
+            Probe("density", (0.0,), density),
+            Probe("density", (1.0,), reference_density),
+            Probe("electron_temperature", (0.0,), te),
+            Probe("ion_temperature", (0.0,), te),
+            Probe("potential", (1.0,), reference_potential),
+        ]
+        return Background.build(grid, probes).bulk["potential"][0]
+
+    ranges = {
+        "density": (1.0e15, 1.0e19),
+        "reference_density": (1.0e15, 1.0e19),
+        "te": (0.5, 20.0),
+        "reference_potential": (-10.0, 10.0),
+    }
+    rule = phi_ref + te * sympy.log(n / n_ref)
+    return {"boltzmann": Rule(rule, boltzmann, ranges, rtol=1e-9)}
+
+
 @dataclass(frozen=True)
+@method(
+    equations={
+        "factor": r"f(\mathbf x) = \frac{Q(\mathbf x)}{Q_\mathrm{ref}}, \qquad f_\mathrm{max} = \frac{\max_k Q_k}{Q_\mathrm{ref}}",
+    },
+    assumptions=(
+        r"$Q_\mathrm{ref}$ the grid maximum of the bulk value by default (`Background.profile`)",
+        r"$n_e$ and $n_i$ bounded by the bulk density on the grid: the layers only lower them",
+    ),
+)
 class FieldProfile:
-    """A background quantity over a reference value: a :class:`plasmacoll` Profile.
+    """A background quantity over a reference value: a `plasmacoll` Profile.
 
     ``positions`` are ``(N, ndim)``, as for the markers of plasmacoll.
     """
@@ -75,6 +155,22 @@ class FieldProfile:
 
 
 @dataclass
+@method(
+    equations={
+        "potential": r"\phi(\mathbf x) = \phi_\mathrm{bulk}(\mathbf x) + f_{w^*}\big(d_{w^*}(\mathbf x)\big), \qquad f_w(d) = \phi_w(d) - \phi_\mathrm{bulk}",
+        "state": r"\big(n, T_e, T_i, \phi_\mathrm{bulk}\big)(\mathbf x) \text{ gathered from the grid}, \qquad (n_e, n_i, \phi) \text{ from the layer of the controlling wall } w^*",
+    },
+    assumptions=(
+        r"static: nothing is solved self-consistently, no Poisson equation, no transport, no magnetic field",
+        r"the bulk interpolated from probes on a uniform grid, its potential from Boltzmann's relation; the Debye sheath and presheath of every wall added analytically at the evaluation point",
+        r"positions in m, densities in m$^{-3}$, temperatures in eV, potentials in V, fields in V/m",
+    ),
+    components=(
+        "byob.background.Background.build",
+        "byob.background.Background.evaluate",
+        "byob.background.Background.electric_field",
+    ),
+)
 class Background:
     """Bulk fields on a grid, with sheaths at ``walls`` added at evaluation."""
 
@@ -87,6 +183,23 @@ class Background:
     _fields: dict[str, Field] = field(default_factory=dict, repr=False)
 
     @classmethod
+    @method(
+        equations={
+            "solid": r"\text{node } k \text{ solid if } d_w(\mathbf x_k) < 0 \text{ for a wall } w",
+            "boltzmann": r"\phi_k = \phi_\mathrm{ref} + T_{e,k} \ln\frac{n_k}{n_\mathrm{ref}} \quad\Longleftrightarrow\quad n = n_\mathrm{ref} \exp\frac{\phi - \phi_\mathrm{ref}}{T_e}",
+        },
+        assumptions=(
+            r"$n$, $T_e$ and $T_i$ filled from their probes, solid nodes left out (`fill_probes`)",
+            r"$n_\mathrm{ref}$ at the node nearest the first `potential` probe and $\phi_\mathrm{ref}$ its value (further potential probes ignored); without one, the node of largest density and $\phi_\mathrm{ref} = 0$",
+            r"the local $T_{e,k}$ multiplies the logarithm: exact for a uniform $T_e$ only",
+            r"a `potential` probe on a wall node makes $\phi$ NaN everywhere",
+        ),
+        references=(
+            "[Lieberman and Lichtenberg, Principles of Plasma Discharges and Materials Processing, 2nd ed. (Wiley, 2005)](https://doi.org/10.1002/0471724254), ch. 6",
+        ),
+        components=(fill_probes,),
+        symbolic=_build_rules,
+    )
     @sp.profile("byob.Background.build", tags=PROFILE_TAGS)
     def build(
         cls,
@@ -105,7 +218,7 @@ class Background:
         the plasma potential at its node; without one, it is zero where the
         density is largest. The presheath decays over ``presheath_debye_lengths``
         Debye lengths of the bulk. ``method`` picks the interpolation, see
-        :func:`~byob.probes.fill_probes`.
+        `byob.probes.fill_probes`.
         """
         points = grid.points().T
         solid = np.zeros(points.shape[0], dtype=bool)
@@ -185,6 +298,24 @@ class Background:
             if sel.any():
                 yield sel, wall, {q: v[sel] for q, v in layer.items()}
 
+    @method(
+        equations={
+            "gather": r"Q(\mathbf x) = \sum_k Q_k \prod_d \max\left(0,\, 1 - \frac{|x_d - x_{d,k}|}{h_d}\right)",
+            "presheath_length": r"L = N_\lambda\, \lambda_D(n, T_e)",
+            "controlling_wall": r"w^*(\mathbf x) = \arg\min_w \phi_w\big(d_w(\mathbf x)\big)",
+            "layer": r"(n_e, n_i, \phi)(\mathbf x) = \text{the layer of } w^* \text{ at } d_{w^*}(\mathbf x), \qquad n_e = n_i = n \text{ without walls}",
+        },
+        order=2,
+        assumptions=(
+            r"multilinear gather by mpifield's compiled kernels; outside the grid the edge value",
+            r"wall and unreached nodes take the nearest finite node first (Euclidean distance transform in index units)",
+            r"the controlling wall, of lowest potential, is the nearest one away from corners and keeps $\phi$ continuous where presheaths overlap",
+            r"`density` keeps the bulk value; the temperatures are unchanged by the layers",
+            r"the order is that of the gather of a smooth bulk inside the grid",
+        ),
+        components=(wall_layer, debye_length),
+        problem=_evaluate_problem,
+    )
     @sp.profile("byob.Background.evaluate", tags=PROFILE_TAGS)
     def evaluate(self, positions: np.ndarray) -> dict[str, np.ndarray]:
         """Return densities, temperatures and potential at ``positions``.
@@ -202,6 +333,22 @@ class Background:
                 out[q][sel] = layer[q]
         return out
 
+    @method(
+        equations={
+            "field": r"\mathbf E = -\nabla \phi_\mathrm{bulk} - \frac{d\phi}{dd}\, \nabla d",
+            "bulk_gradient": r"(\partial_d \phi)_k = \frac{\phi_{k + \mathbf e_d} - \phi_{k - \mathbf e_d}}{2 h_d}",
+            "normal": r"\partial_j d = \frac{d(\mathbf x + \epsilon\, \mathbf e_j) - d(\mathbf x - \epsilon\, \mathbf e_j)}{2 \epsilon}, \qquad \epsilon = 10^{-3} \min_j h_j",
+        },
+        order=2,
+        assumptions=(
+            r"the chain rule for $\phi = \phi_\mathrm{bulk} + f(d)$ with $n$, $T_e$, $\Delta\phi$ and $s$ held fixed: the bulk gradients inside the layer are left out",
+            r"$d\phi/dd$ of the controlling wall (`wall_layer`); zero without walls, discontinuous at the sheath edge",
+            r"the bulk gradient by `mpifield.Field.gradient`, one-sided (first order) at the grid ends and using the filled values inside walls; gathered multilinearly",
+            r"the order is that of the bulk field of a smooth potential inside the grid",
+        ),
+        components=(wall_layer,),
+        problem=_electric_field_problem,
+    )
     @sp.profile("byob.Background.electric_field", tags=PROFILE_TAGS)
     def electric_field(self, positions: np.ndarray) -> np.ndarray:
         """Return the electric field ``(N, ndim)`` at ``positions``.
@@ -229,14 +376,14 @@ class Background:
 
     @sp.profile("byob.Background.sample", tags=PROFILE_TAGS)
     def sample(self, x=None, y=None, z=None, *, resolution=128):
-        """Return every quantity on a tensor grid as an :class:`xarray.Dataset`.
+        """Return every quantity on a tensor grid as an `xarray.Dataset`.
 
-        Like :meth:`simgeometry.api.GeometryAPI.evaluate`: a scalar fixes an
+        Like `simgeometry.api.GeometryAPI.evaluate`: a scalar fixes an
         axis, a sequence samples it, and an axis left out gets ``resolution``
         points across the grid bounds. Fixed axes are dropped from the
         dimensions, so ``sample(y=0.0)`` is a line and ``sample()`` the whole
-        domain. The values come from :meth:`evaluate` and
-        :meth:`electric_field`, with the field's
+        domain. The values come from `evaluate` and
+        `electric_field`, with the field's
         ``component`` dimension as plasma-plots' ``vector`` expects.
         """
         import xarray as xr
@@ -277,7 +424,7 @@ class Background:
     def profile(self, quantity: str, reference: float | None = None) -> FieldProfile:
         """Return ``quantity`` over ``reference`` (the grid maximum by default).
 
-        The result is a :class:`plasmacoll.background.Profile`, so it can shape
+        The result is a `plasmacoll.background.Profile`, so it can shape
         a plasmacoll background.
         """
         if reference is None:

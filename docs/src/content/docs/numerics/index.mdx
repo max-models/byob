@@ -1,0 +1,81 @@
+---
+title: Overview
+description: The equations of byob, from the probes to the sheath at a wall, and what the model leaves out.
+sidebar:
+  label: Overview
+---
+
+import MethodCard from '@max-models/starlight-theme/components/MethodCard.astro';
+
+byob builds a static plasma background for tracking test particles: the electron and ion
+densities, the temperatures, the potential and the electric field at any position, in 1D, 2D or
+3D. Nothing is solved self-consistently. The bulk is interpolated from a few probe values over a
+uniform grid and its potential follows Boltzmann's relation; the Debye sheath and presheath in
+front of every wall are added analytically at the evaluation point, so they stay sharp however
+coarse the grid.
+
+Each equation on these pages is declared on the code that implements it, as a method card, and
+checked by the tests: the closed forms of the sheath, the presheath and the Boltzmann potential
+against SymPy rules, the probe fill, the gather and the bulk field against their order of
+convergence. The pages of the section list the cards module by module; this one shows how they
+fit together.
+
+<MethodCard name="byob.background.Background" headingLevel={3} />
+
+## From probes to the wall
+
+1. **[Probe interpolation](/byob/numerics/probes/).** Each of $n$, $T_e$ and $T_i$ is fixed at
+   the nodes nearest its probes and spread over the other nodes by a harmonic or (by default)
+   biharmonic equation on the grid graph, in $\ln Q$ so it stays positive. Walls and the domain
+   boundary are zero-gradient, so values flow around electrodes instead of through them:
+
+<MethodCard name="byob.probes.fill_probes" headingLevel={3} />
+
+2. **[Boltzmann potential](/byob/numerics/background/).** `Background.build` sets the bulk
+   potential on the nodes from $n$ and $T_e$, anchored at a `potential` probe or at the density
+   maximum.
+3. **[Sheath and presheath](/byob/numerics/sheath/).** At a point at distance $d$ from a wall,
+   the bulk state of the point gives the presheath drop $T_e/2$ to the Bohm speed, the sheath
+   drop of a floating or biased wall, and the Child-Langmuir width; the potential and the
+   densities follow in closed form:
+
+<MethodCard name="byob.sheath.wall_layer" headingLevel={3} />
+
+4. **[Evaluation](/byob/numerics/background/).** `Background.evaluate` gathers the bulk
+   linearly from the grid and replaces $n_e$, $n_i$ and $\phi$ by the layer of the controlling
+   wall, the one of lowest potential; `Background.electric_field` adds $-\nabla\phi_\mathrm{bulk}$
+   from the grid and $-(d\phi/dd)\,\nabla d$ from the layer.
+
+## Units and conventions
+
+Positions in m, densities in m$^{-3}$, temperatures in eV (so $T/e$ is written $T$), potentials
+in V and fields in V/m. A wall is a simgeometry shape with a signed distance $d$, negative
+inside; positions are `(N, ndim)`. The ion mass defaults to the proton mass.
+
+## Not in the model
+
+- No Poisson equation: the sheath potential (Child-Langmuir, ion space charge only) and the
+  sheath densities (Boltzmann electrons, Bohm ions) are not mutually consistent.
+- No electron sheaths: a wall biased above the sheath edge potential gets the presheath only.
+  No wall currents and no secondary electron emission.
+- The layer uses the bulk state at the evaluation point, taken as constant across it: gradients
+  of $n$ and $T_e$ along the layer do not enter $\mathbf E$.
+- The $4/3$ power of the sheath potential is taken about the wall, not about the sheath edge:
+  the field is zero at the wall and largest at the edge, the reverse of the Child-Langmuir
+  solution. The width, the drop, the end values and the densities as functions of $\phi$ are
+  unaffected.
+- Temperatures are unchanged in the sheath and presheath; $T_i$ enters only the floating drop.
+- No magnetic field, no time dependence, no collisions (those are plasmacoll's, fed by
+  `Background.profile`).
+- Outside the grid the bulk is constant (the edge value); the walls are evaluated exactly
+  anywhere.
+
+## Verification
+
+Besides the checks of the cards, the tests check that the harmonic fill does not overshoot its
+probes, that the biharmonic fill has no cusp at a probe, that a region without a probe is NaN,
+and, on a uniform plasma in front of a floating wall, the wall potential and that the field is
+$-\nabla\phi$ by finite differences of `evaluate`. The
+[biased electrode](/byob/example-scripts/03-biased-electrode/) shows the sheath widening as
+$\Delta\phi^{3/4}$, and [tracking ions](/byob/example-scripts/11-tracking-ions/) ions reaching
+the sheath edge near the Bohm speed.

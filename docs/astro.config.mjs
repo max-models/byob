@@ -8,9 +8,21 @@ export default defineDocs({
 	title: 'byob',
 	description: 'Build your own background: static plasma fields with Debye sheaths for particle tracking.',
 	pythonPackage: 'byob',
+	// the method cards: a Numerics section with the overview (numerics/index.mdx) and one page per
+	// module, in the order of the model, and a Numerics section on each method's API page
+	methodcard: {
+		pages: true,
+		index: false,
+		labels: {
+			'byob.probes': 'Probe interpolation',
+			'byob.sheath': 'Sheath and presheath',
+			'byob.background': 'Background',
+		},
+	},
 	nav: [
 		{ label: 'Getting started', link: '/getting-started/installation/' },
 		{ label: 'Examples', link: '/examples/' },
+		{ label: 'Numerics', link: '/numerics/' },
 		{ label: 'Development', link: '/development/docs/' },
 		{ label: 'API', link: '/api/byob/' },
 	],
