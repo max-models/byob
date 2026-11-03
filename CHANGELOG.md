@@ -7,11 +7,26 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- The docstrings use code spans instead of reST `:func:` roles, which the API pages show as
+  text, and the `byob.sheath` docstring says that the layer uses the bulk state of the point
+  itself, as the code does, not the state next to the wall.
 - `setup_project.sh` also renames the docs smoke paths (`api/byob/...` in `docs.yml`), so the
   docs build of a new project no longer looks for the template's API pages.
 
 ### Added
 
+- Method cards (methodcard) on the equations of the model: the uniform grid, the probe fill
+  (harmonic and biharmonic, in $\ln Q$), the Boltzmann potential, the Debye length, the
+  floating and biased sheath drops, the Child-Langmuir width, the sheath and presheath
+  profiles, the gather and the electric field of `Background`, and `FieldProfile`, with their
+  assumptions and references. `test_method_cards.py` checks them: twelve SymPy rules for the
+  closed forms, the observed order of the probe fill (first, against the clamped cubic spline
+  in 1D), of the gather and of the bulk field (second), and the cards of the docs against
+  those of the code. Adds the `methodcard` dependency.
+- A Numerics section in the docs (header and sidebar): an overview of the model's equations
+  (`docs/src/content/docs/numerics/index.mdx`, with the main cards) and one page per module
+  (starlight-theme's `methodcard: { pages: true }`, theme 0.7.4); each method's API page shows
+  its card.
 - Opt-in scope-profiler regions, as in plasmacoll, wellbalanced and patchwork: `_profiling.py`
   with the package's tag (`byob`, renamed by `setup_project.sh`), registered on
   import, and an example region on `main`. Off unless the application enables the tag (e.g.

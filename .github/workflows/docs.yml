@@ -30,5 +30,9 @@ jobs:
         examples/index.html
         example-scripts/index.html
         example-scripts/01-floating-wall/index.html
+        numerics/index.html
+        numerics/probes/index.html
+        numerics/sheath/index.html
+        numerics/background/index.html
         api/byob/index.html
         example-scripts/01-floating-wall/plot-1.png

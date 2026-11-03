@@ -2,7 +2,7 @@
 
 A box chamber with a floating sphere, sampled in a mid-plane and along a line.
 
-Nothing changes in 3D: the probes, the walls and :meth:`Background.sample` are the same, and a
+Nothing changes in 3D: the probes, the walls and `Background.sample` are the same, and a
 fixed coordinate picks out a plane or a line, so plasma-plots draws the slice directly.
 """
 

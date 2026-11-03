@@ -3,7 +3,7 @@
 What the background is for: pushing particles through its electric field.
 
 Hydrogen ions start at rest in the bulk and are integrated with a leapfrog scheme, calling
-:meth:`Background.electric_field` at their positions every step. They drift slowly down the
+`Background.electric_field` at their positions every step. They drift slowly down the
 presheath and are then accelerated through the sheath onto the biased electrode below. The
 trajectories are drawn over the potential map; the second figure shows that ions reach the
 sheath edge near the Bohm speed $\\sqrt{T_e/m_i}$.
