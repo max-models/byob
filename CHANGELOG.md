@@ -15,6 +15,12 @@ format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- A live demo in the docs (Getting started, Live demo): the sheath and presheath in front of a
+  floating or biased wall, computed with `Background.build` and `Background.evaluate` in the
+  reader's browser with Pyodide, with sliders for the density, the electron temperature, the ion
+  species and the wall (`docs/src/components/byob_demo.py`, starlight-theme's `PyodideDemo`).
+  The docs workflow builds the wheels it installs (`pyodide: true`), and a new Pyodide workflow
+  checks that byob imports and the demo runs in Pyodide.
 - Method cards (methodcard) on the equations of the model: the uniform grid, the probe fill
   (harmonic and biharmonic, in $\ln Q$), the Boltzmann potential, the Debye length, the
   floating and biased sheath drops, the Child-Langmuir width, the sheath and presheath

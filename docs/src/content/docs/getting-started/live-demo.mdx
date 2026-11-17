@@ -1,0 +1,52 @@
+---
+title: Live demo
+description: The sheath and presheath in front of a wall, computed by byob in your browser.
+---
+
+import PyodideDemo from '@max-models/starlight-theme/components/PyodideDemo.astro';
+import code from '../../../components/byob_demo.py?raw';
+
+This demo runs byob in your browser with [Pyodide](https://pyodide.org) (Python compiled to
+WebAssembly): nothing is installed and nothing is sent to a server. A uniform plasma faces a
+wall at $x = 0$; move the sliders to change the plasma and the wall.
+
+<PyodideDemo
+	code={code}
+	controls={[
+		{ name: 'density', label: 'Density', min: 15, max: 19, value: 1e17, log: true, unit: 'm<sup>-3</sup>' },
+		{ name: 'electron_temperature', label: 'Electron temperature', min: 0.5, max: 20, step: 0.5, value: 2, unit: 'eV' },
+		{ name: 'ion', label: 'Ion', options: ['H', 'He', 'Ar'], value: 'H' },
+		{ name: 'wall', label: 'Wall', options: ['floating', '-30 V', '-300 V', '-3000 V'], value: 'floating' },
+	]}
+	captions={[
+		'The potential against the distance from the wall; the dotted line is the sheath edge.',
+		'The ion (solid) and electron (dashed) densities over the bulk density.',
+	]}
+/>
+
+The potential falls by $T_e/2$ across the presheath, which byob lets decay over 20 Debye
+lengths, and then across the sheath down to the wall. A floating wall repels just enough
+electrons to balance the ion flux: its sheath drop grows with $T_e$ and with the logarithm of
+the ion mass (about $2.8\,T_e$ for hydrogen, $4.7\,T_e$ for argon), while its width stays a few
+Debye lengths. A negatively biased wall widens the sheath following the Child-Langmuir law,
+$s \propto \lambda_D\,\Delta\phi^{3/4}$; the density sets the Debye length and so the scale
+of everything. In the sheath the electrons are repelled (Boltzmann) while the ions, accelerated
+to the Bohm speed, conserve their flux, so the ion density stays above the electron density.
+
+The same in a script, at particle positions:
+
+```python
+from simgeometry import Rectangle
+
+from byob import Background, Probe, UniformGrid, Wall
+
+grid = UniformGrid((0.0, 0.0), (0.05, 0.02), (51, 21))
+probes = [
+    Probe("density", (0.025, 0.01), 1e17),
+    Probe("electron_temperature", (0.025, 0.01), 2.0),
+    Probe("ion_temperature", (0.025, 0.01), 0.1),
+]
+wall = Wall(Rectangle((-0.01, 0.01), (0.02, 0.04)), "biased", -300.0)
+background = Background.build(grid, probes, [wall])
+state = background.evaluate([[1e-5, 0.01], [1e-3, 0.01]])  # potential, densities
+```
